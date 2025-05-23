@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Simulatore di Illuminazione 3D</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', sans-serif; /* Utilizzo Inter come richiesto */
+            line-height: 1.6;
+            background-color: #f0f0f0;
+            color: #333;
+            overflow: hidden; /* Impedisce le barre di scorrimento */
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        #info {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            padding: 10px;
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.75);
+            z-index: 1; /* Assicura che l'info sia sopra la scena 3D */
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        #info a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        #info a:hover {
+            text-decoration: underline;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100vh; /* La canvas occupa l'intera viewport */
+        }
+
+        .lil-gui {
+            z-index: 2; /* Assicura che la GUI sia sopra la scena 3D */
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        #fileInputContainer {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            background-color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #fileInput {
+            display: none; /* Nasconde l'input file originale */
+        }
+
+        #uploadButton {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+
+        #uploadButton:hover {
+            background-color: #0056b3;
+        }
+
+        #uploadFileName {
+            font-size: 14px;
+            color: #555;
+        }
+
+        #loadingIndicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.module.min.css" rel="stylesheet">
+</head>
+<body>
+    <div id="info">
+        Simulatore di Illuminazione 3D per Progetti Semplici
+    </div>
+
+    <div id="fileInputContainer">
+        <input type="file" id="fileInput" accept=".glb,.gltf,.obj,.stl">
+        <button id="uploadButton">Carica Modello 3D</button>
+        <span id="uploadFileName">Nessun file selezionato</span>
+    </div>
+
+    <div id="loadingIndicator">Caricamento modello...</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+        // Variabili globali
+        let renderer, scene, camera, controls;
+        const lights = []; // Array per gestire più luci
+        const objects = []; // Array per gestire oggetti 3D e forme base
+        let currentRoomWidth = 5;
+        let currentRoomHeight = 3;
+        let currentRoomDepth = 5;
+
+        // Mappa delle temperature colore (CCT) ai valori esadecimali
+        const cctColors = {
+            '1800K': 0xFFB03D,
+            '2200K': 0xFFBF66,
+            '2700K': 0xFFD6AA,
+            '3000K': 0xFFE5CC,
+            '3500K': 0xFFF2EA,
+            '4000K': 0xFFFBEF,
+            '5000K': 0xF8F8F8,
+            '5700K': 0xF2F4F7,
+            '6000K': 0xEEF2F7,
+            'Personalizzato': 0xFFFFFF // Aggiunto per gestire il colore personalizzato
+        };
+
+        // Elementi DOM
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadFileNameSpan = document.getElementById('uploadFileName');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // Setup della GUI - Inizializza gui qui
+        const gui = new GUI(); // Spostato l'inizializzazione qui
+
+        init();
+        animate();
+
+        function init() {
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Ombre più morbide
+
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1;
+
+            // Scena
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222); // Sfondo scuro per contrasto
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(currentRoomWidth / 2 + 3, currentRoomHeight / 2 + 3, currentRoomDepth / 2 + 3); // Posizione iniziale della camera
+            camera.lookAt(currentRoomWidth / 2, currentRoomHeight / 2, currentRoomDepth / 2);
+
+            // Controlli della Camera
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(currentRoomWidth / 2, currentRoomHeight / 2, currentRoomDepth / 2); // Centro della stanza
+            controls.update();
+
+            // Luce Ambientale (emisphere light per una luce di base)
+            const ambientLight = new THREE.HemisphereLight(0xffffff, 0x8d8d8d, 0.15);
+            scene.add(ambientLight);
+
+            // Stanza
+            createRoom(currentRoomWidth, currentRoomHeight, currentRoomDepth);
+
+            // GUI (lil-gui)
+            setupGUI(); // Ora setupGUI si occupa solo di aggiungere le cartelle all'istanza gui già creata
+
+            // Event Listener per il ridimensionamento della finestra
+            window.addEventListener('resize', onWindowResize);
+
+            // Event Listener per il caricamento del file
+            uploadButton.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', onFileInputChange);
+
+            // Aggiungi una luce di default
+            addLight({ x: currentRoomWidth / 2, y: currentRoomHeight * 0.8, z: currentRoomDepth / 2 });
+        }
+
+        // Funzione per creare la stanza
+        function createRoom(width, height, depth) {
+            // Rimuovi la stanza esistente se presente
+            scene.traverse((object) => {
+                if (object.userData.isRoomComponent) {
+                    if (object.geometry) object.geometry.dispose();
+                    if (object.material) object.material.dispose();
+                    scene.remove(object);
+                }
+            });
+
+            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0xbbbbbb, side: THREE.DoubleSide });
+
+            // Pavimento
+            const floorGeometry = new THREE.PlaneGeometry(width, depth);
+            const floor = new THREE.Mesh(floorGeometry, wallMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.set(width / 2, 0, depth / 2);
+            floor.receiveShadow = true;
+            floor.userData.isRoomComponent = true;
+            scene.add(floor);
+
+            // Parete Posteriore (Z=0)
+            const wallBackGeometry = new THREE.PlaneGeometry(width, height);
+            const wallBack = new THREE.Mesh(wallBackGeometry, wallMaterial);
+            wallBack.position.set(width / 2, height / 2, 0);
+            wallBack.receiveShadow = true;
+            wallBack.userData.isRoomComponent = true;
+            scene.add(wallBack);
+
+            // Parete Anteriore (Z=depth) - per la visualizzazione
+            const wallFrontGeometry = new THREE.PlaneGeometry(width, height);
+            const wallFront = new THREE.Mesh(wallFrontGeometry, wallMaterial);
+            wallFront.position.set(width / 2, height / 2, depth);
+            wallFront.rotation.y = Math.PI;
+            wallFront.receiveShadow = true;
+            wallFront.userData.isRoomComponent = true;
+            scene.add(wallFront);
+
+            // Parete Sinistra (X=0)
+            const wallLeftGeometry = new THREE.PlaneGeometry(depth, height);
+            const wallLeft = new THREE.Mesh(wallLeftGeometry, wallMaterial);
+            wallLeft.position.set(0, height / 2, depth / 2);
+            wallLeft.rotation.y = Math.PI / 2;
+            wallLeft.receiveShadow = true;
+            wallLeft.userData.isRoomComponent = true;
+            scene.add(wallLeft);
+
+            // Parete Destra (X=width)
+            const wallRightGeometry = new THREE.PlaneGeometry(depth, height);
+            const wallRight = new THREE.Mesh(wallRightGeometry, wallMaterial);
+            wallRight.position.set(width, height / 2, depth / 2);
+            wallRight.rotation.y = -Math.PI / 2;
+            wallRight.receiveShadow = true;
+            wallRight.userData.isRoomComponent = true;
+            scene.add(wallRight);
+
+            // Aggiorna il target dei controlli della camera al centro della nuova stanza
+            controls.target.set(width / 2, height / 2, depth / 2);
+            controls.update();
+        }
+
+        // Funzione per aggiungere una luce
+        function addLight(position, color = 0xFFD6AA, lumens = 1000, angleDeg = 30, falloff = 0.5) {
+            const spotLight = new THREE.SpotLight(color, lumens); // intensity è lumen
+            spotLight.position.copy(position);
+            spotLight.angle = THREE.MathUtils.degToRad(angleDeg); // Converti gradi in radianti
+            spotLight.penumbra = falloff;
+            spotLight.decay = 2; // Legge dell'inverso del quadrato per un comportamento più realistico
+            spotLight.distance = 0; // Distanza infinita per un comportamento più "lumen-like"
+
+            spotLight.castShadow = true;
+            spotLight.shadow.mapSize.width = 1024;
+            spotLight.shadow.mapSize.height = 1024;
+            spotLight.shadow.camera.near = 0.1;
+            spotLight.shadow.camera.far = 20;
+            spotLight.shadow.focus = 1; // Manteniamo il focus a 1 per un cono di luce definito
+
+            // Crea un target per la luce e rendilo figlio della luce stessa per la rotazione
+            const spotLightTarget = new THREE.Object3D();
+            spotLight.add(spotLightTarget);
+            spotLightTarget.position.set(0, 0, -1); // Punta inizialmente lungo l'asse Z locale negativo
+            spotLight.target = spotLightTarget;
+
+            scene.add(spotLight);
+
+            // Piccola sfera per rappresentare la sorgente luminosa
+            const lightBulb = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1, 16, 8),
+                new THREE.MeshBasicMaterial({ color: color })
+            );
+            lightBulb.position.copy(position);
+            scene.add(lightBulb);
+
+            const lightHelper = new THREE.SpotLightHelper(spotLight);
+            scene.add(lightHelper);
+
+            const lightObj = {
+                spotLight,
+                lightBulb,
+                lightHelper,
+                params: {
+                    x: position.x,
+                    y: position.y,
+                    z: position.z,
+                    rotationX: 0, // Rotazione in gradi
+                    rotationY: 0,
+                    rotationZ: 0,
+                    cct: Object.keys(cctColors).find(key => cctColors[key] === color) || '2700K', // Trova CCT o default
+                    color: color,
+                    lumens: lumens,
+                    angle: angleDeg,
+                    falloff: falloff
+                },
+                // Memorizza i riferimenti ai controller GUI per aggiornamenti futuri
+                guiControllers: {},
+                guiFolder: null // Riferimento alla cartella GUI
+            };
+            lights.push(lightObj);
+            addLightControlsToGUI(lightObj, lights.length - 1);
+            updateLightBulbColor(lightObj); // Aggiorna il colore della lampadina
+        }
+
+        // Funzione per aggiornare il colore della lampadina
+        function updateLightBulbColor(lightObj) {
+            lightObj.lightBulb.material.color.setHex(lightObj.spotLight.color.getHex());
+        }
+
+        // Funzione per rimuovere una luce
+        function removeLight(index) {
+            if (lights[index]) {
+                const { spotLight, lightBulb, lightHelper, guiFolder } = lights[index];
+                scene.remove(spotLight);
+                scene.remove(lightBulb);
+                scene.remove(lightHelper);
+                guiFolder.destroy(); // Distrugge la cartella GUI specifica
+                lights.splice(index, 1);
+
+                // Aggiorna i nomi delle cartelle delle luci rimanenti
+                lights.forEach((l, i) => {
+                    l.guiFolder.title(`Luce ${i + 1}`); // Aggiorna il titolo della cartella
+                });
+            }
+        }
+
+        // Funzione per aggiungere un oggetto base
+        function addObject(type, position, size) {
+            let geometry;
+            switch (type) {
+                case 'cubo':
+                    geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+                    break;
+                case 'cilindro':
+                    geometry = new THREE.CylinderGeometry(size.radius, size.radius, size.height, 32);
+                    break;
+                case 'sfera':
+                    geometry = new THREE.SphereGeometry(size.radius, 32, 32);
+                    break;
+                default:
+                    return;
+            }
+
+            const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.copy(position);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            const objectObj = { mesh, type, params: { x: position.x, y: position.y, z: position.z, ...size }, guiFolder: null };
+            objects.push(objectObj);
+            objectObj.guiFolder = addObjectControlsToGUI(objectObj, objects.length - 1);
+        }
+
+        // Funzione per rimuovere un oggetto
+        function removeObject(index) {
+            if (objects[index]) {
+                const { mesh, guiFolder } = objects[index];
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) mesh.material.dispose();
+                scene.remove(mesh);
+                guiFolder.destroy(); // Distrugge la cartella GUI specifica
+                objects.splice(index, 1);
+
+                // Aggiorna i nomi delle cartelle degli oggetti rimanenti
+                objects.forEach((o, i) => {
+                    o.guiFolder.title(`${o.type === 'modello_caricato' ? 'Modello Caricato' : 'Oggetto'} ${i + 1}`);
+                });
+            }
+        }
+
+        // Setup della GUI (funzione ora solo aggiunge le cartelle principali)
+        function setupGUI() {
+            // --- Cartella Stanza ---
+            const roomFolder = gui.addFolder('Stanza');
+            const roomParams = {
+                width: currentRoomWidth,
+                height: currentRoomHeight,
+                depth: currentRoomDepth
+            };
+            roomFolder.add(roomParams, 'width', 1, 10, 0.1).name('Larghezza (m)').onChange(val => {
+                currentRoomWidth = val;
+                createRoom(currentRoomWidth, currentRoomHeight, currentRoomDepth);
+            });
+            roomFolder.add(roomParams, 'height', 1, 10, 0.1).name('Altezza (m)').onChange(val => {
+                currentRoomHeight = val;
+                createRoom(currentRoomWidth, currentRoomHeight, currentRoomDepth);
+            });
+            roomFolder.add(roomParams, 'depth', 1, 10, 0.1).name('Profondità (m)').onChange(val => {
+                currentRoomDepth = val;
+                createRoom(currentRoomWidth, currentRoomHeight, currentRoomDepth);
+            });
+            roomFolder.open();
+
+            // --- Controlli Luci ---
+            const lightActionsFolder = gui.addFolder('Azioni Luci');
+            lightActionsFolder.add({ add: () => addLight({ x: currentRoomWidth / 2, y: currentRoomHeight * 0.8, z: currentRoomDepth / 2 }) }, 'add').name('Aggiungi Luce');
+            lightActionsFolder.open();
+
+            // --- Controlli Oggetti ---
+            const objectActionsFolder = gui.addFolder('Azioni Oggetti');
+            objectActionsFolder.add({ addCube: () => addObject('cubo', { x: currentRoomWidth / 2, y: currentRoomHeight / 2, z: currentRoomDepth / 2 }, { x: 1, y: 1, z: 1 }) }, 'addCube').name('Aggiungi Cubo');
+            objectActionsFolder.add({ addCylinder: () => addObject('cilindro', { x: currentRoomWidth / 2, y: currentRoomHeight / 2, z: currentRoomDepth / 2 }, { radius: 0.5, height: 1 }) }, 'addCylinder').name('Aggiungi Cilindro'); // Corretto da addCilindro a addCylinder
+            objectActionsFolder.add({ addSphere: () => addObject('sfera', { x: currentRoomWidth / 2, y: currentRoomHeight / 2, z: currentRoomDepth / 2 }, { radius: 0.5 }) }, 'addSphere').name('Aggiungi Sfera');
+            objectActionsFolder.open();
+        }
+
+        // Aggiungi controlli per una luce specifica
+        function addLightControlsToGUI(lightObj, index) {
+            const folder = gui.addFolder(`Luce ${index + 1}`);
+            lightObj.guiFolder = folder; // Memorizza il riferimento alla cartella
+
+            // Posizione
+            const posFolder = folder.addFolder('Posizione');
+            posFolder.add(lightObj.params, 'x', 0, 10, 0.01).name('X (m)').onChange(val => {
+                lightObj.spotLight.position.x = val;
+                lightObj.lightBulb.position.x = val;
+                lightObj.lightHelper.update();
+            });
+            posFolder.add(lightObj.params, 'y', 0, 10, 0.01).name('Y (m)').onChange(val => {
+                lightObj.spotLight.position.y = val;
+                lightObj.lightBulb.position.y = val;
+                lightObj.lightHelper.update();
+            });
+            posFolder.add(lightObj.params, 'z', 0, 10, 0.01).name('Z (m)').onChange(val => {
+                lightObj.spotLight.position.z = val;
+                lightObj.lightBulb.position.z = val;
+                lightObj.lightHelper.update();
+            });
+            posFolder.open();
+
+            // Rotazione
+            const rotFolder = folder.addFolder('Rotazione (gradi)');
+            rotFolder.add(lightObj.params, 'rotationX', -180, 180, 1).name('Rotazione X').onChange(val => {
+                lightObj.spotLight.rotation.x = THREE.MathUtils.degToRad(val);
+                lightObj.lightHelper.update();
+            });
+            rotFolder.add(lightObj.params, 'rotationY', -180, 180, 1).name('Rotazione Y').onChange(val => {
+                lightObj.spotLight.rotation.y = THREE.MathUtils.degToRad(val);
+                lightObj.lightHelper.update();
+            });
+            rotFolder.add(lightObj.params, 'rotationZ', -180, 180, 1).name('Rotazione Z').onChange(val => {
+                lightObj.spotLight.rotation.z = THREE.MathUtils.degToRad(val);
+                lightObj.lightHelper.update();
+            });
+            rotFolder.open();
+
+
+            // CCT e Colore Personalizzato
+            lightObj.guiControllers.cct = folder.add(lightObj.params, 'cct', Object.keys(cctColors)).name('CCT').onChange(val => {
+                const hexColor = cctColors[val];
+                lightObj.spotLight.color.setHex(hexColor);
+                lightObj.params.color = hexColor; // Sincronizza il colore per il color picker
+                updateLightBulbColor(lightObj);
+                lightObj.guiControllers.color.updateDisplay(); // Usa il riferimento diretto
+            });
+
+            lightObj.guiControllers.color = folder.addColor(lightObj.params, 'color').name('Colore Personalizzato').onChange(val => {
+                lightObj.spotLight.color.setHex(val);
+                updateLightBulbColor(lightObj);
+                // Quando l'utente cambia il colore custom, imposta CCT su 'Personalizzato'
+                lightObj.params.cct = 'Personalizzato';
+                // Aggiorna le opzioni del dropdown CCT se 'Personalizzato' non è già presente
+                if (!Object.keys(cctColors).includes('Personalizzato')) { // Controlla se esiste già
+                    cctColors['Personalizzato'] = val; // Memorizza il colore personalizzato (opzionale)
+                    lightObj.guiControllers.cct.options(Object.keys(cctColors)); // Aggiorna le opzioni del dropdown
+                }
+                lightObj.guiControllers.cct.updateDisplay(); // Usa il riferimento diretto
+            });
+
+
+            folder.add(lightObj.params, 'lumens', 0, 2000, 10).name('Lumen').onChange(val => { // Range lumen modificato
+                lightObj.spotLight.intensity = val;
+            });
+            folder.add(lightObj.params, 'angle', 1, 60, 1).name('Angolo (°)').onChange(val => { // Range angolo modificato
+                lightObj.spotLight.angle = THREE.MathUtils.degToRad(val);
+                lightObj.lightHelper.update();
+            });
+            folder.add(lightObj.params, 'falloff', 0, 1, 0.01).name('Falloff').onChange(val => {
+                lightObj.spotLight.penumbra = val;
+            });
+
+            folder.add({ remove: () => removeLight(index) }, 'remove').name('Rimuovi Luce');
+            folder.open();
+            return folder; // Ritorna la cartella creata
+        }
+
+        // Aggiungi controlli per un oggetto specifico
+        function addObjectControlsToGUI(objectObj, index) {
+            const folder = gui.addFolder(`Oggetto ${index + 1} (${objectObj.type})`);
+            objectObj.guiFolder = folder; // Memorizza il riferimento alla cartella
+
+            const posFolder = folder.addFolder('Posizione');
+            posFolder.add(objectObj.params, 'x', 0, 10, 0.01).name('X (m)').onChange(val => objectObj.mesh.position.x = val);
+            posFolder.add(objectObj.params, 'y', 0, 10, 0.01).name('Y (m)').onChange(val => objectObj.mesh.position.y = val);
+            posFolder.add(objectObj.params, 'z', 0, 10, 0.01).name('Z (m)').onChange(val => objectObj.mesh.position.z = val);
+            posFolder.open();
+
+            const scaleFolder = folder.addFolder('Scala');
+            if (objectObj.type === 'cubo') {
+                scaleFolder.add(objectObj.params, 'x', 0.1, 5, 0.01).name('Larghezza (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.BoxGeometry(val, objectObj.params.y, objectObj.params.z);
+                });
+                scaleFolder.add(objectObj.params, 'y', 0.1, 5, 0.01).name('Altezza (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.BoxGeometry(objectObj.params.x, val, objectObj.params.z);
+                });
+                scaleFolder.add(objectObj.params, 'z', 0.1, 5, 0.01).name('Profondità (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.BoxGeometry(objectObj.params.x, objectObj.params.y, val);
+                });
+            } else if (objectObj.type === 'cilindro') {
+                scaleFolder.add(objectObj.params, 'radius', 0.01, 2.5, 0.01).name('Raggio (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.CylinderGeometry(val, val, objectObj.params.height, 32);
+                });
+                scaleFolder.add(objectObj.params, 'height', 0.1, 5, 0.01).name('Altezza (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.CylinderGeometry(objectObj.params.radius, objectObj.params.radius, val, 32);
+                });
+            } else if (objectObj.type === 'sfera') {
+                scaleFolder.add(objectObj.params, 'radius', 0.01, 2.5, 0.01).name('Raggio (m)').onChange(val => {
+                    objectObj.mesh.geometry.dispose();
+                    objectObj.mesh.geometry = new THREE.SphereGeometry(val, 32, 32);
+                });
+            }
+            scaleFolder.open();
+
+            folder.add({ remove: () => removeObject(index) }, 'remove').name('Rimuovi Oggetto');
+            folder.open();
+            return folder; // Ritorna la cartella creata
+        }
+
+        // Gestione caricamento file 3D
+        function onFileInputChange(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                uploadFileNameSpan.textContent = 'Nessun file selezionato';
+                return;
+            }
+
+            uploadFileNameSpan.textContent = file.name;
+            loadingIndicator.style.display = 'block'; // Mostra l'indicatore di caricamento
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = e.target.result;
+                const extension = file.name.split('.').pop().toLowerCase();
+
+                let loader;
+                switch (extension) {
+                    case 'gltf':
+                    case 'glb':
+                        loader = new GLTFLoader();
+                        break;
+                    case 'obj':
+                        loader = new OBJLoader();
+                        break;
+                    case 'stl':
+                        loader = new STLLoader();
+                        break;
+                    default:
+                        console.error('Formato file non supportato:', extension);
+                        loadingIndicator.style.display = 'none';
+                        return;
+                }
+
+                if (extension === 'glb' || extension === 'gltf') {
+                    loader.parse(data, '', (gltf) => {
+                        processLoadedModel(gltf.scene);
+                    }, (error) => {
+                        console.error('Errore nel caricamento del modello GLTF/GLB:', error);
+                        loadingIndicator.style.display = 'none';
+                    });
+                } else if (extension === 'obj') {
+                    loader.load(URL.createObjectURL(file), (obj) => {
+                        processLoadedModel(obj);
+                    }, undefined, (error) => {
+                        console.error('Errore nel caricamento del modello OBJ:', error);
+                        loadingIndicator.style.display = 'none';
+                    });
+                } else if (extension === 'stl') {
+                    loader.load(URL.createObjectURL(file), (geometry) => {
+                        const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
+                        const mesh = new THREE.Mesh(geometry, material);
+                        processLoadedModel(mesh);
+                    }, undefined, (error) => {
+                        console.error('Errore nel caricamento del modello STL:', error);
+                        loadingIndicator.style.display = 'none';
+                    });
+                }
+            };
+            reader.readAsArrayBuffer(file); // Leggi come ArrayBuffer per GLTF/GLB/STL
+        }
+
+        function processLoadedModel(model) {
+            // Rimuovi tutti gli oggetti 3D caricati in precedenza
+            // Usa un ciclo for inverso per evitare problemi con la modifica dell'array durante l'iterazione
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+                if (obj.mesh.userData.isLoadedModel) {
+                    if (obj.mesh.geometry) obj.mesh.geometry.dispose();
+                    if (obj.mesh.material) {
+                        // Se il materiale è un array, disporre ogni materiale
+                        if (Array.isArray(obj.mesh.material)) {
+                            obj.mesh.material.forEach(mat => mat.dispose());
+                        } else {
+                            obj.mesh.material.dispose();
+                        }
+                    }
+                    scene.remove(obj.mesh);
+                    if (obj.guiFolder) {
+                        obj.guiFolder.destroy();
+                    }
+                    objects.splice(i, 1); // Rimuovi l'elemento dall'array
+                }
+            }
+
+
+            // Calcola il bounding box del modello
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+
+            // Scala il modello se è troppo grande per stare in 1x1x1m
+            const maxDimension = Math.max(size.x, size.y, size.z);
+            const targetSize = 1; // 1 metro per lato
+            if (maxDimension > targetSize) {
+                const scaleFactor = targetSize / maxDimension;
+                model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                box.setFromObject(model); // Ricalcola il bounding box dopo la scala
+                box.getSize(size); // Aggiorna la dimensione
+            }
+
+            // Centra il modello sulla base del pavimento della stanza
+            model.position.x = currentRoomWidth / 2 - (box.min.x + size.x / 2);
+            model.position.y = -box.min.y; // Poggia sul pavimento
+            model.position.z = currentRoomDepth / 2 - (box.min.z + size.z / 2);
+
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            model.userData.isLoadedModel = true; // Flag per identificare i modelli caricati
+            scene.add(model);
+
+            // Aggiungi ai nostri oggetti gestiti
+            const objectObj = { mesh: model, type: 'modello_caricato', params: { x: model.position.x, y: model.position.y, z: model.position.z, scale: model.scale.x }, guiFolder: null };
+            objects.push(objectObj);
+            objectObj.guiFolder = addLoadedModelControlsToGUI(objectObj, objects.length - 1);
+
+            loadingIndicator.style.display = 'none'; // Nasconde l'indicatore
+            controls.target.copy(model.position); // Punta la camera al modello
+            controls.update();
+        }
+
+        // Aggiungi controlli per un modello caricato
+        function addLoadedModelControlsToGUI(objectObj, index) {
+            const folder = gui.addFolder(`Modello Caricato ${index + 1}`);
+            objectObj.guiFolder = folder; // Memorizza il riferimento alla cartella
+
+            const posFolder = folder.addFolder('Posizione');
+            posFolder.add(objectObj.mesh.position, 'x', 0, 10, 0.01).name('X (m)');
+            posFolder.add(objectObj.mesh.position, 'y', 0, 10, 0.01).name('Y (m)');
+            posFolder.add(objectObj.mesh.position, 'z', 0, 10, 0.01).name('Z (m)');
+            posFolder.open();
+
+            const scaleFolder = folder.addFolder('Scala');
+            scaleFolder.add(objectObj.mesh.scale, 'x', 0.01, 5, 0.01).name('Scala').onChange(val => {
+                objectObj.mesh.scale.set(val, val, val); // Applica la stessa scala a tutti gli assi
+            });
+            scaleFolder.open();
+
+            folder.add({ remove: () => removeObject(index) }, 'remove').name('Rimuovi Modello');
+            folder.open();
+            return folder; // Ritorna la cartella creata
+        }
+
+
+        // Funzione per il ridimensionamento della finestra
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Loop di animazione
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // Aggiorna i controlli della camera
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
