@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ezCone - Visualizzatore di Diagrammi Conici</title>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono&display=swap" rel="stylesheet">
+    <style>
+        /* Parte in CSS */
+        body {
+            font-family: 'Ubuntu Mono', monospace; /* Font */
+            background-color: #1a1a1a; /* Sfondo corpo */
+            color: #f0f0f0; /* Testo chiaro */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* H minima per centrare tutto l'ambaradan */
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background-color: #2a2a2a; /* Sfondo leggermente più chiaro per il contenitore principale */
+            padding: 30px;
+            border-radius: 15px; /* Bordi arrotondati */
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); /* Ombra per profondità */
+            width: 100%;
+            max-width: 900px; /* Larghezza max contenitore, così non sfasa */
+            display: flex;
+            flex-direction: column;
+            gap: 25px; /* Spazio tra gli elementi */
+            align-items: center;
+            position: relative; /* Questo è solo per la scritta del copyright in basso a DX */
+        }
+
+        h1 {
+            color: #bebebe; /* Colore grigietto per il titolo*/
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .input-section {
+            display: flex;
+            flex-wrap: wrap; /* A capo su schermi mobile */
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        .input-section label {
+            font-size: 1.1em;
+            color: #cccccc;
+        }
+
+        .input-section input[type="number"] {
+            background-color: #3a3a3a; /* Sfondo scuro per gli input */
+            border: 1px solid #555555; /* Bordo sottile */
+            color: #f0f0f0; /* Testo chiaro */
+            padding: 10px 15px;
+            border-radius: 8px; /* Bordi arrotondati */
+            outline: none; /* Rimuove il bordo di focus predefinito */
+            width: 120px;
+            text-align: center;
+            transition: border-color 0.3s ease; /* Transizione fluida per il bordo */
+        }
+
+        .input-section input[type="number"]:focus {
+            border-color: #313131; /* Bordo verde al focus */
+        }
+
+        .input-section button {
+            background-color: #7e7e7e; /* Sfondo grigietto per il bottone */
+            color: #ffffff; /* Testo bianco */
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px; /* Bordi arrotondati */
+            cursor: pointer; /* Cursore a puntatore */
+            font-size: 1.1em;
+            transition: background-color 0.3s ease, transform 0.2s ease; /* Transizioni fluide */
+            box-shadow: 0 4px 10px rgba(0, 128, 0, 0.3); /* Ombra per il bottone */
+        }
+
+        .input-section button:hover {
+            background-color: #4a4a4a; /* Grigio più scuro al passaggio del mouse */
+            transform: translateY(-2px); /* Leggero sollevamento al passaggio del mouse */
+        }
+
+        .copyright { /*scritta copiraitttttt*/
+            position: absolute;
+            bottom: 7.5px;
+            right: 10px;
+            font-size: 0.7em;
+            color:#bebebe;
+            white-space: nowrap;
+        }        
+
+        .diagram-section {
+            display: flex;
+            flex-direction: column; /* Colonna per layout mobile */
+            gap: 20px;
+            width: 100%;
+            align-items: center;
+        }
+
+        #coneCanvas {
+            background-color: #3a3a3a; /* Sfondo più scuro per il canvas */
+            border: 2px solid #555555; /* Bordo per il canvas */
+            border-radius: 10px; /* Bordi arrotondati */
+            width: 100%; /* Occupa tutta la larghezza disponibile */
+            max-width: 600px; /* Larghezza massima del canvas */
+            height: 450px; /* Altezza fissa del canvas aumentata per il padding */
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7); /* Ombra interna per il canvas */
+        }
+
+        .results-table {
+            width: 100%;
+            max-width: 600px; /* Larghezza massima per la tabella dei risultati */
+            margin-top: 20px;
+        }
+
+        .results-table h2 {
+            color: #bebebe; /* Grigietto per il titolo della tabella */
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .results-table table {
+            width: 100%;
+            border-collapse: collapse; /* Rimuove gli spazi tra i bordi delle celle */
+            background-color: #3a3a3a;
+            border-radius: 10px;
+            overflow: hidden; /* Assicura che i bordi arrotondati si applichino al contenuto */
+        }
+
+        .results-table th, .results-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #555555; /* Bordo inferiore per le celle */
+        }
+
+        .results-table th {
+            background-color: #7e7e7e; /* Sfondo grigio per l'intestazione della tabella */
+            color: #ffffff;
+            font-weight: normal; /* Modificato da 'bold' a 'normal' per coerenza con il font del canvas */
+        }
+
+        .results-table tbody tr:nth-child(even) {
+            background-color: #2f2f2f; /* Sfondo alternato per le righe */
+        }
+
+        .results-table tbody tr:hover {
+            background-color: #424242; /* Sfondo al passaggio del mouse sulle righe */
+        }
+
+        /* Regolazioni responsive per schermi più grandi */
+        @media (min-width: 768px) {
+            .diagram-section {
+                flex-direction: row; /* Riga per layout desktop */
+                justify-content: space-around;
+                align-items: flex-start;
+            }
+            #coneCanvas {
+                width: 50%; /* Larghezza ridotta per affiancare la tabella */
+                height: auto; /* L'altezza si adatta */
+                min-height: 450px; /* Altezza minima aumentata */
+            }
+            .results-table {
+                width: 45%; /* Larghezza ridotta per affiancare il canvas */
+                margin-top: 0;
+            }
+        }
+
+        /* Regolazioni responsive per schermi molto piccoli */
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px;
+            }
+            .input-section input[type="number"],
+            .input-section button {
+                width: 100%; /* Input e bottone a larghezza piena */
+            }
+        }
+
+        /* Stili per il messaggio di alert personalizzato */
+        #custom-alert {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #3a3a3a;
+            color: #f0f0f0;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            z-index: 1000; /* Assicura che sia sopra gli altri elementi */
+            border: 1px solid #7e7e7e; /* Colore del bordo dell'alert */
+            font-family: 'Ubuntu Mono', monospace;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        #custom-alert button {
+            background-color: #7e7e7e; /* Colore del bottone dell'alert */
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+
+        #custom-alert button:hover {
+            background-color: #4a4a4a; /* Colore hover del bottone dell'alert */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ezCone</h1>
+        <div class="input-section">
+            <label for="lumens">Lumen (lm):</label>
+            <input type="number" id="lumens" value="1000" min="1">
+            <label for="beamAngle">Angolo del Fascio (°):</label>
+            <input type="number" id="beamAngle" value="60" min="1" max="179">
+            <button id="calculateBtn">Calcola e Disegna</button>
+        </div>
+        <div class="copyright">tutti i diritti riservati a Luce InForma &copy;</div>
+        <div class="diagram-section">
+            <canvas id="coneCanvas"></canvas>
+            <div class="results-table">
+                <h2>Risultati</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Altezza (m)</th>
+                            <th>Diametro Fascio (m)</th>
+                            <th>Illuminamento (Lux)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Attende che il DOM sia completamente caricato
+        document.addEventListener('DOMContentLoaded', () => {
+            // Ottiene i riferimenti agli elementi HTML
+            const lumensInput = document.getElementById('lumens');
+            const beamAngleInput = document.getElementById('beamAngle');
+            const calculateBtn = document.getElementById('calculateBtn');
+            const coneCanvas = document.getElementById('coneCanvas');
+            const ctx = coneCanvas.getContext('2d'); // Contesto di disegno 2D del canvas
+            const resultsBody = document.getElementById('resultsBody');
+
+            // Altezze standard per il calcolo e la visualizzazione
+            const heights = [1, 2, 3, 4, 5]; // Altezze in metri
+
+            // Funzione per disegnare il cono e visualizzare i risultati
+            const drawConeAndCalculate = () => {
+                const lumens = parseFloat(lumensInput.value);
+                const beamAngleDeg = parseFloat(beamAngleInput.value);
+
+                // Validazione degli input
+                if (isNaN(lumens) || lumens <= 0) {
+                    // Utilizza la funzione alert personalizzata
+                    alert('Per favore, inserisci un valore valido per i Lumen (deve essere un numero positivo).');
+                    return;
+                }
+                if (isNaN(beamAngleDeg) || beamAngleDeg <= 0 || beamAngleDeg >= 180) {
+                    // Utilizza la funzione alert personalizzata
+                    alert('Per favor, inserisci un valore valido per l\'Angolo del Fascio (deve essere un numero tra 1 e 179 gradi).');
+                    return;
+                }
+
+                // Converte l'angolo del fascio da gradi a radianti
+                const beamAngleRad = beamAngleDeg * (Math.PI / 180);
+
+                // Pulisce il canvas prima di ridisegnare
+                ctx.clearRect(0, 0, coneCanvas.width, coneCanvas.height);
+                ctx.fillStyle = '#3a3a3a'; // Colore di sfondo del canvas
+                ctx.fillRect(0, 0, coneCanvas.width, coneCanvas.height);
+
+                // --- Impostazioni per il Disegno sul Canvas con padding ---
+                const canvasWidth = coneCanvas.width;
+                const canvasHeight = coneCanvas.height;
+                const topPadding = 20; // Padding superiore per il disegno
+                const bottomPadding = 30; // Padding inferiore per il disegno (per le scritte a 5m)
+                const effectiveDrawingHeight = canvasHeight - topPadding - bottomPadding;
+
+                const apexX = canvasWidth / 2; // L'apice del cono è al centro orizzontale
+                const apexY = topPadding; // L'apice del cono è posizionato dopo il padding superiore
+
+                // Calcola il diametro massimo alla massima altezza di visualizzazione (5m) per la scalatura
+                const maxDisplayHeight = 5; // Altezza massima rappresentata sul canvas
+                let maxDiameter = 2 * maxDisplayHeight * Math.tan(beamAngleRad / 2);
+
+                // Gestisce angoli del fascio molto piccoli o troppo grandi per una visualizzazione ottimale
+                if (beamAngleRad === 0) {
+                    maxDiameter = 0; // Per un fascio perfettamente collimato, il diametro è zero
+                } else if (maxDiameter === Infinity || maxDiameter > 1000) {
+                    // Limita il diametro per evitare coni eccessivamente larghi che escono dal canvas
+                    maxDiameter = 1000;
+                }
+
+                // Fattori di scala per il disegno:
+                // Scala Y: Mappa l'altezza da 0-5m ai pixel del canvas nell'area di disegno effettiva
+                const scaleY = effectiveDrawingHeight / maxDisplayHeight;
+                // Scala X: Mappa il diametro massimo alla larghezza del canvas
+                const scaleX = canvasWidth / maxDiameter;
+
+                // Assicura una scala minima per fasci molto stretti, in modo che siano comunque visibili
+                const minScaleX = canvasWidth / 10; // Se il diametro massimo è minuscolo, usa almeno 1/10 della larghezza del canvas
+                // Sceglie la scala più piccola tra quella calcolata e la scala minima per garantire visibilità
+                const effectiveScaleX = Math.min(scaleX, minScaleX);
+
+                // --- Disegna il Contorno del Cono ---
+                ctx.beginPath();
+                ctx.moveTo(apexX, apexY); // Punto di partenza: apice del cono, offset dal padding
+
+                // Calcola i punti base del cono
+                const baseDiameterAtMaxHeight = 2 * maxDisplayHeight * Math.tan(beamAngleRad / 2);
+                const baseRadiusScaled = (baseDiameterAtMaxHeight / 2) * effectiveScaleX;
+
+                ctx.lineTo(apexX - baseRadiusScaled, apexY + effectiveDrawingHeight); // Punto in basso a sinistra (offset dal padding)
+                ctx.lineTo(apexX + baseRadiusScaled, apexY + effectiveDrawingHeight); // Punto in basso a destra (offset dal padding)
+                ctx.closePath(); // Chiude il percorso per formare un triangolo
+                ctx.strokeStyle = '#7e7e7e'; // Colore grigio per il contorno
+                ctx.lineWidth = 2; // Spessore del contorno
+                ctx.stroke(); // Disegna il contorno
+                ctx.fillStyle = 'rgba(126, 126, 126, 0.1)'; // Riempimento leggermente trasparente (grigio)
+                ctx.fill(); // Riempie il cono
+
+                // --- Visualizza i Risultati e Disegna le Linee del Fascio ---
+                resultsBody.innerHTML = ''; // Pulisce i risultati precedenti nella tabella
+
+                // Imposta il font per le etichette sul canvas, aumentato e non condensed
+                ctx.font = '18px "Ubuntu Mono", monospace'; // Font più grande e non "striminzito"
+                ctx.fillStyle = '#f0f0f0'; // Colore bianco per il testo delle etichette
+                const textHorizontalPadding = 15; // Distanza fissa dai bordi del canvas per il testo
+
+                heights.forEach(h => {
+                    // Calcola il diametro del fascio all'altezza corrente
+                    const diameter = 2 * h * Math.tan(beamAngleRad / 2);
+                    // Calcola l'area del cerchio illuminato
+                    const area = Math.PI * (diameter / 2) ** 2;
+                    let illuminance = 0;
+
+                    // Calcola l'illuminamento (Lux)
+                    if (area > 0) {
+                        illuminance = lumens / area;
+                    } else if (beamAngleDeg === 0) {
+                        // Per un fascio perfettamente collimato, l'illuminamento è infinito
+                        illuminance = Infinity;
+                    }
+
+                    // Aggiunge una riga alla tabella dei risultati
+                    const row = resultsBody.insertRow();
+                    row.insertCell().textContent = h.toFixed(0); // Altezza senza decimali
+                    row.insertCell().textContent = diameter.toFixed(2); // Diametro con 2 decimali
+                    row.insertCell().textContent = illuminance.toFixed(2); // Illuminamento con 2 decimali
+
+                    // Disegna la linea del fascio sul canvas all'altezza corrente
+                    const yPos = apexY + h * scaleY; // Posizione Y sul canvas, offset dal padding
+                    const currentRadiusScaled = (diameter / 2) * effectiveScaleX; // Raggio scalato
+
+                    ctx.beginPath();
+                    ctx.moveTo(apexX - currentRadiusScaled, yPos);
+                    ctx.lineTo(apexX + currentRadiusScaled, yPos);
+                    ctx.strokeStyle = '#cccccc'; // Colore grigio per le linee del fascio
+                    ctx.lineWidth = 1; // Spessore della linea
+                    ctx.stroke(); // Disegna la linea
+
+                    // Disegna l'etichetta dell'altezza a sinistra del cono
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`${h}m`, textHorizontalPadding, yPos + 4); // +4 per allineamento verticale
+
+                    // Disegna il diametro e l'illuminamento a destra del cono
+                    ctx.textAlign = 'right';
+                    const diameterText = diameter.toFixed(2);
+                    const illuminanceText = illuminance.toFixed(2);
+                    ctx.fillText(`${diameterText}m - ${illuminanceText} Lux`, canvasWidth - textHorizontalPadding, yPos + 4);
+                });
+
+                // Aggiunge un piccolo punto giallo all'apice per rappresentare la sorgente luminosa
+                ctx.beginPath();
+                ctx.arc(apexX, apexY, 5, 0, Math.PI * 2); // Cerchio piccolo, offset dal padding
+                ctx.fillStyle = '#FFFF00'; // Giallo
+                ctx.fill();
+                ctx.strokeStyle = '#FFA500'; // Contorno arancione
+                ctx.stroke();
+            };
+
+            // Esegue il calcolo e il disegno iniziale al caricamento della pagina
+            drawConeAndCalculate();
+
+            // Aggiunge un listener per il click del bottone "Calcola e Disegna"
+            calculateBtn.addEventListener('click', drawConeAndCalculate);
+
+            // Funzione per ridimensionare il canvas in base alla dimensione del contenitore
+            const resizeCanvas = () => {
+                // Imposta la larghezza interna del canvas per corrispondere alla sua larghezza CSS
+                // Questo è fondamentale per evitare disegni sfocati
+                const canvasContainer = coneCanvas.parentElement;
+                coneCanvas.width = canvasContainer.clientWidth > 0 ? canvasContainer.clientWidth : 600;
+                // Altezza del canvas aumentata per accogliere il padding e le scritte a 5m
+                coneCanvas.height = 450;
+                drawConeAndCalculate(); // Ridisegna il cono con le nuove dimensioni
+            };
+
+            // Esegue il ridimensionamento iniziale
+            resizeCanvas();
+            // Aggiunge un listener per l'evento di ridimensionamento della finestra
+            window.addEventListener('resize', resizeCanvas);
+        });
+
+        // Funzione di alert personalizzata per sostituire window.alert()
+        // Questo è necessario perché window.alert() non funziona bene negli iframe
+        function alert(message) {
+            // Rimuove qualsiasi alert personalizzato esistente per evitare sovrapposizioni
+            const existingAlert = document.getElementById('custom-alert');
+            if (existingAlert) {
+                existingAlert.remove();
+            }
+
+            // Crea l'elemento div per l'alert
+            const alertBox = document.createElement('div');
+            alertBox.id = 'custom-alert';
+            // Stili inline per posizionamento e aspetto
+            alertBox.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: #3a3a3a;
+                color: #f0f0f0;
+                padding: 20px 30px;
+                border-radius: 10px;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+                z-index: 1000;
+                border: 1px solid #7e7e7e;
+                font-family: 'Ubuntu Mono', monospace;
+                text-align: center;
+                max-width: 80%;
+            `;
+
+            // Crea l'elemento p per il messaggio
+            const messageText = document.createElement('p');
+            messageText.textContent = message;
+            messageText.style.marginBottom = '20px';
+
+            // Crea il bottone OK
+            const closeButton = document.createElement('button');
+            closeButton.textContent = 'OK';
+            // Stili inline per il bottone
+            closeButton.style.cssText = `
+                background-color: #7e7e7e;
+                color: #ffffff;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 1em;
+                transition: background-color 0.3s ease;
+            `;
+            // Effetti hover per il bottone
+            closeButton.onmouseover = () => closeButton.style.backgroundColor = '#4a4a4a';
+            closeButton.onmouseout = () => closeButton.style.backgroundColor = '#7e7e7e';
+            // Funzione per chiudere l'alert al click
+            closeButton.onclick = () => alertBox.remove();
+
+            // Aggiunge il messaggio e il bottone all'alert box
+            alertBox.appendChild(messageText);
+            alertBox.appendChild(closeButton);
+            // Aggiunge l'alert box al corpo del documento
+            document.body.appendChild(alertBox);
+        }
+    </script>
+</body>
+</html>
